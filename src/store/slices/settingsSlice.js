@@ -1,39 +1,38 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  theme: 'system', // 'light', 'dark', 'system'
-  fontSize: 'medium', // 'small', 'medium', 'large', 'xlarge'
-  translation: 'en.sahih', // default English translation
-  arabicTextType: 'uthmani', // 'uthmani' or 'indopak' or 'simple'
+  theme: 'light',
+  fontSize: 'medium',
+  translation: 'en.asad',
+  arabicTextType: 'uthmani',
   showArabicText: true,
   showTranslation: true,
   showTransliteration: false,
-  scrollBehavior: 'smooth',
-  quranFont: 'Scheherazade-Regular',
-  appLanguage: 'en', // app interface language
-  lastRead: null, // { surahId: 1, ayahNumber: 1 }
-  preTajweedColors: true, // colorize tajweed rules
-  autoPlayNext: false, // automatically play next surah 
-  vibration: true, // use vibration feedback
-  notificationSettings: {
-    reminders: true,
-    prayerTimesNotification: true,
-    dailyQuoteNotification: false,
-    notificationSound: 'default',
+  tajweedColors: false,
+  autoPlayNext: false,
+  vibration: true,
+  appLanguage: 'en',
+  lastRead: {
+    surahId: 1,
+    ayahNumber: 1,
+    timestamp: Date.now()
+  },
+  notifications: {
+    enabled: false,
+    prayerReminders: false,
+    dailyReminder: false,
+    dailyReminderTime: '08:00'
   },
   prayerSettings: {
-    calculationMethod: 'muslimWorldLeague',
-    madhab: 'shafi',
+    calculationMethod: 2, // 2 = ISNA
     adjustments: {
       fajr: 0,
       dhuhr: 0,
       asr: 0,
       maghrib: 0,
-      isha: 0,
-    },
-    showSunrise: true,
-    showMidnight: false,
-  },
+      isha: 0
+    }
+  }
 };
 
 const settingsSlice = createSlice({
@@ -61,20 +60,8 @@ const settingsSlice = createSlice({
     toggleTransliteration: (state) => {
       state.showTransliteration = !state.showTransliteration;
     },
-    setScrollBehavior: (state, action) => {
-      state.scrollBehavior = action.payload;
-    },
-    setQuranFont: (state, action) => {
-      state.quranFont = action.payload;
-    },
-    setAppLanguage: (state, action) => {
-      state.appLanguage = action.payload;
-    },
-    updateLastRead: (state, action) => {
-      state.lastRead = action.payload;
-    },
     toggleTajweedColors: (state) => {
-      state.preTajweedColors = !state.preTajweedColors;
+      state.tajweedColors = !state.tajweedColors;
     },
     toggleAutoPlayNext: (state) => {
       state.autoPlayNext = !state.autoPlayNext;
@@ -82,9 +69,19 @@ const settingsSlice = createSlice({
     toggleVibration: (state) => {
       state.vibration = !state.vibration;
     },
+    setAppLanguage: (state, action) => {
+      state.appLanguage = action.payload;
+    },
+    updateLastRead: (state, action) => {
+      state.lastRead = {
+        surahId: action.payload.surahId,
+        ayahNumber: action.payload.ayahNumber,
+        timestamp: Date.now()
+      };
+    },
     updateNotificationSettings: (state, action) => {
-      state.notificationSettings = {
-        ...state.notificationSettings,
+      state.notifications = {
+        ...state.notifications,
         ...action.payload
       };
     },
@@ -93,8 +90,8 @@ const settingsSlice = createSlice({
         ...state.prayerSettings,
         ...action.payload
       };
-    },
-  },
+    }
+  }
 });
 
 export const {
@@ -105,15 +102,13 @@ export const {
   toggleArabicText,
   toggleTranslation,
   toggleTransliteration,
-  setScrollBehavior,
-  setQuranFont,
-  setAppLanguage,
-  updateLastRead,
   toggleTajweedColors,
   toggleAutoPlayNext,
   toggleVibration,
+  setAppLanguage,
+  updateLastRead,
   updateNotificationSettings,
-  updatePrayerSettings,
+  updatePrayerSettings
 } = settingsSlice.actions;
 
 export default settingsSlice.reducer;

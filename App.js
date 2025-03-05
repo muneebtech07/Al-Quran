@@ -1,79 +1,119 @@
-import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import * as Font from 'expo-font';
+import React from 'react';
+import { StatusBar } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
-import { store, persistor } from './src/store';
+import { store, persistor } from './src/store/configureStore';
 import { ThemeProvider } from './src/contexts/ThemeContext';
-import AppNavigator from './src/navigation/AppNavigator';
-import { initializeLocalization } from './src/localization/i18n';
-import * as SplashScreen from 'expo-splash-screen';
+import { Ionicons } from '@expo/vector-icons';
+import * as Localization from 'expo-localization';
 
-// Keep the splash screen visible while we fetch resources
-SplashScreen.preventAutoHideAsync();
+// Screens
+import SplashScreen from './src/screens/SplashScreen';
+import HomeScreen from './src/screens/HomeScreen';
+import SurahListScreen from './src/screens/SurahListScreen';
+import SurahDetailScreen from './src/screens/SurahDetailScreen';
+import BookmarksScreen from './src/screens/BookmarksScreen';
+import SearchScreen from './src/screens/SearchScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import PrayerTimesScreen from './src/screens/PrayerTimesScreen';
+import QiblaFinderScreen from './src/screens/QiblaFinderScreen';
+import AudioPlayerScreen from './src/screens/AudioPlayerScreen';
 
-export default function App() {
-  const [appIsReady, setAppIsReady] = useState(false);
+// Set up navigation
+const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
 
-  useEffect(() => {
-    async function prepare() {
-      try {
-        // Initialize localization
-        await initializeLocalization();
-        
-        // Load fonts
-        await Font.loadAsync({
-          'Scheherazade-Regular': require('./assets/fonts/Scheherazade-Regular.ttf'),
-          'Scheherazade-Bold': require('./assets/fonts/Scheherazade-Bold.ttf'),
-        });
-      } catch (e) {
-        console.warn('Error loading app resources:', e);
-      } finally {
-        // Tell the application to render
-        setAppIsReady(true);
-      }
-    }
+// Main tab navigator
+const MainTabs = () => {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
 
-    prepare();
-  }, []);
+          if (route.name === 'Home') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'Surahs') {
+            iconName = focused ? 'book' : 'book-outline';
+          } else if (route.name === 'Search') {
+            iconName = focused ? 'search' : 'search-outline';
+          } else if (route.name === 'Bookmarks') {
+            iconName = focused ? 'bookmark' : 'bookmark-outline';
+          } else if (route.name === 'Settings') {
+            iconName = focused ? 'settings' : 'settings-outline';
+          }
 
-  const onLayoutRootView = React.useCallback(async () => {
-    if (appIsReady) {
-      // This tells the splash screen to hide immediately
-      await SplashScreen.hideAsync();
-    }
-  }, [appIsReady]);
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen} 
+        options={{ headerShown: false }}
+      />
+      <Tab.Screen 
+        name="Surahs" 
+        component={SurahListScreen}
+        options={{ title: "Quran" }}
+      />
+      <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Bookmarks" component={BookmarksScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
+    </Tab.Navigator>
+  );
+};
 
-  if (!appIsReady) {
-    return null;
-  }
-
+// Main app component
+const App = () => {
   return (
     <Provider store={store}>
-      <PersistGate loading={<LoadingScreen />} persistor={persistor}>
+      <PersistGate loading={null} persistor={persistor}>
         <ThemeProvider>
-          <View style={styles.container} onLayout={onLayoutRootView}>
-            <AppNavigator />
-          </View>
+          <NavigationContainer>
+            <StatusBar translucent backgroundColor="transparent" />
+            <Stack.Navigator initialRouteName="Splash">
+              <Stack.Screen 
+                name="Splash" 
+                component={SplashScreen} 
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen 
+                name="Main" 
+                component={MainTabs} 
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen 
+                name="SurahDetail" 
+                component={SurahDetailScreen}
+                options={({ route }) => ({ 
+                  title: route.params?.surahName || "Surah"
+                })}
+              />
+              <Stack.Screen 
+                name="PrayerTimes" 
+                component={PrayerTimesScreen}
+                options={{ title: "Prayer Times" }}
+              />
+              <Stack.Screen 
+                name="QiblaFinder" 
+                component={QiblaFinderScreen}
+                options={{ title: "Qibla Finder" }}
+              />
+              <Stack.Screen 
+                name="AudioPlayer" 
+                component={AudioPlayerScreen}
+                options={{ title: "Audio Player" }}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
         </ThemeProvider>
       </PersistGate>
     </Provider>
   );
-}
+};
 
-const LoadingScreen = () => (
-  <View style={styles.loadingContainer}>
-    <ActivityIndicator size="large" color="#075E54" />
-  </View>
-);
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
+export default App;

@@ -9,29 +9,34 @@ const notesSlice = createSlice({
   initialState,
   reducers: {
     addNote: (state, action) => {
-      const { surahId, ayahNumber, content, timestamp = Date.now() } = action.payload;
+      const { surahId, ayahNumber, text, timestamp } = action.payload;
       state.items.push({
-        id: `note-${timestamp}`,
+        id: `${surahId}_${ayahNumber}_${timestamp}`,
         surahId,
         ayahNumber,
-        content,
+        text,
         timestamp
       });
     },
     updateNote: (state, action) => {
-      const { id, content } = action.payload;
+      const { id, text } = action.payload;
       const noteIndex = state.items.findIndex(note => note.id === id);
+      
       if (noteIndex !== -1) {
-        state.items[noteIndex].content = content;
+        state.items[noteIndex].text = text;
         state.items[noteIndex].lastModified = Date.now();
       }
     },
     deleteNote: (state, action) => {
       const { id } = action.payload;
       state.items = state.items.filter(note => note.id !== id);
+    },
+    clearAllNotes: (state) => {
+      state.items = [];
     }
   }
 });
 
-export const { addNote, updateNote, deleteNote } = notesSlice.actions;
+export const { addNote, updateNote, deleteNote, clearAllNotes } = notesSlice.actions;
+
 export default notesSlice.reducer;

@@ -2,93 +2,89 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   isPlaying: false,
-  currentAudio: null,
   currentSurah: null,
   currentAyah: null,
-  playbackPosition: 0,
-  duration: 0,
-  playbackRate: 1.0,
-  isLoading: false,
-  isLoaded: false,
-  error: null,
-  repeatMode: 'none', // 'none', 'ayah', 'surah'
-  qari: 'Mishary Rashid Alafasy', // default reciter
-  sleepTimerMinutes: 0, // 0 means disabled
-  sleepTimerEndTime: null
+  reciterId: 'ar.alafasy', // Default to Mishary Rashid Alafasy
+  playbackSpeed: 1,
+  repeat: {
+    enabled: false,
+    count: 1,
+    range: {
+      start: null,
+      end: null
+    }
+  },
+  queue: [],
+  history: []
 };
 
 const audioPlayerSlice = createSlice({
   name: 'audioPlayer',
   initialState,
   reducers: {
-    setPlayingState: (state, action) => {
+    setPlayback: (state, action) => {
       state.isPlaying = action.payload;
     },
-    setCurrentAudio: (state, action) => {
-      state.currentAudio = action.payload;
-    },
-    setCurrentSurah: (state, action) => {
-      state.currentSurah = action.payload;
-    },
-    setCurrentAyah: (state, action) => {
-      state.currentAyah = action.payload;
-    },
-    updatePlaybackPosition: (state, action) => {
-      state.playbackPosition = action.payload;
-    },
-    setDuration: (state, action) => {
-      state.duration = action.payload;
-    },
-    setPlaybackRate: (state, action) => {
-      state.playbackRate = action.payload;
-    },
-    setLoadingState: (state, action) => {
-      state.isLoading = action.payload;
-    },
-    setLoadedState: (state, action) => {
-      state.isLoaded = action.payload;
-    },
-    setError: (state, action) => {
-      state.error = action.payload;
-    },
-    setRepeatMode: (state, action) => {
-      state.repeatMode = action.payload;
-    },
-    setQari: (state, action) => {
-      state.qari = action.payload;
-    },
-    setSleepTimer: (state, action) => {
-      state.sleepTimerMinutes = action.payload;
+    setCurrentTrack: (state, action) => {
+      const { surahId, ayahNumber } = action.payload;
+      state.currentSurah = surahId;
+      state.currentAyah = ayahNumber;
       
-      if (action.payload > 0) {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() + action.payload);
-        state.sleepTimerEndTime = now.getTime();
-      } else {
-        state.sleepTimerEndTime = null;
+      // Add to history
+      if (surahId && ayahNumber) {
+        const historyItem = {
+          surahId,
+          ayahNumber,
+          timestamp: Date.now()
+        };
+        
+        // Add to history, avoiding duplicates
+        if (state.history.length === 0 || 
+            state.history[0].surahId !== surahId || 
+            state.history[0].ayahNumber !== ayahNumber) {
+          state.history = [historyItem, ...state.history.slice(0, 9)]; // Keep last 10 items
+        }
       }
     },
-    resetPlayer: (state) => {
-      return {...initialState, qari: state.qari}; // Preserve selected qari
+    setReciter: (state, action) => {
+      state.reciterId = action.payload;
+    },
+    setPlaybackSpeed: (state, action) => {
+      state.playbackSpeed = action.payload;
+    },
+    setRepeatSettings: (state, action) => {
+      state.repeat = {
+        ...state.repeat,
+        ...action.payload
+      };
+    },
+    addToQueue: (state, action) => {
+      const { surahId, ayahNumber } = action.payload;
+      state.queue.push({ surahId, ayahNumber });
+    },
+    removeFromQueue: (state, action) => {
+      const index = action.payload;
+      state.queue = state.queue.filter((_, i) => i !== index);
+    },
+    clearQueue: (state) => {
+      state.queue = [];
+    },
+    clearHistory: (state) => {
+      state.history = [];
     }
-  },
+  }
 });
 
 export const {
-  setPlayingState,
-  setCurrentAudio,
-  setCurrentSurah,
-  setCurrentAyah,
-  updatePlaybackPosition,
-  setDuration,
-  setPlaybackRate,
-  setLoadingState,
-  setLoadedState,
-  setError,
-  setRepeatMode,
-  setQari,
-  setSleepTimer,
-  resetPlayer
+  setPlayback,
+  setCurrentTrack,
+  setReciter,
+  setPlaybackSpeed,
+  setRepeatSettings,
+  addToQueue,
+  removeFromQueue,
+  clearQueue,
+  clearHistory
 } = audioPlayerSlice.actions;
 
 export default audioPlayerSlice.reducer;

@@ -1,26 +1,21 @@
-module.exports = {
+export default {
   expo: {
     name: "Quran App",
-    slug: "quran-app",
+    slug: "al-quran",
     version: "1.0.0",
-    // ... other expo config
+    owner: "muneebf", // Ensure this is included
     scheme: "quranapp",
     web: {
       bundler: "metro"
     },
-    plugins: [
-      // ... other plugins
-    ],
     ios: {
-      bundleIdentifier: "com.yourcompany.quranapp",
+      bundleIdentifier: "com.muneebtech.quranapp",
       buildNumber: "1.0.0",
-      // Associated Domains for Universal Links
-      associatedDomains: ["applinks:quran-app.example.com"]
+      associatedDomains: [""]
     },
     android: {
-      package: "com.yourcompany.quranapp",
+      package: "com.muneebtech.quranapp",
       versionCode: 1,
-      // Intent filters for deep linking
       intentFilters: [
         {
           action: "VIEW",
@@ -28,7 +23,7 @@ module.exports = {
           data: [
             {
               scheme: "https",
-              host: "quran-app.example.com",
+              host: "",
               pathPrefix: "/"
             },
             {
@@ -41,7 +36,7 @@ module.exports = {
     },
     extra: {
       eas: {
-        projectId: "your-eas-project-id"
+        projectId: "7ff66f71-70b6-4ed6-b3e3-ae79e67455f0"
       }
     }
   }

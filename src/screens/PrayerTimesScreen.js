@@ -3,362 +3,337 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  ActivityIndicator, 
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl
+  TouchableOpacity, 
+  ScrollView, 
+  ActivityIndicator,
+  Switch,
+  Platform,
+  Alert
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { fetchPrayerTimes } from '../services/api';
 import { useSelector, useDispatch } from 'react-redux';
 import { updatePrayerSettings } from '../store/slices/settingsSlice';
-import { fetchPrayerTimes } from '../services/api';
-import * as Location from 'expo-location';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import i18n from '../localization/i18n';
 
 const PrayerTimesScreen = ({ navigation }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const dispatch = useDispatch();
   const prayerSettings = useSelector(state => state.settings.prayerSettings);
   
   const [location, setLocation] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [prayerTimes, setPrayerTimes] = useState(null);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [prayerTimes, setPrayerTimes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [nextPrayer, setNextPrayer] = useState(null);
-  const [timeRemaining, setTimeRemaining] = useState('');
   
-  // Prayer names and icons
-  const prayerInfo = {
-    Fajr: { name: 'Fajr', icon: 'sunny-outline', color: '#FF7E67' },
-    Dhuhr: { name: 'Dhuhr', icon: 'sunny', color: '#FFC947' },
-    Asr: { name: 'Asr', icon: 'partly-sunny', color: '#FFA62B' },
-    Maghrib: { name: 'Maghrib', icon: 'moon-outline', color: '#16697A' },
-    Isha: { name: 'Isha', icon: 'moon', color: '#1A1A2E' },
-    Sunrise: { name: 'Sunrise', icon: 'sunny-outline', color: '#FF9933' },
-    Midnight: { name: 'Midnight', icon: 'moon', color: '#0F3057' },
-  };
-
   useEffect(() => {
-    (async () => {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setErrorMsg('Permission to access location was denied');
-          setLoading(false);
-          return;
-        }
-
-        let location = await Location.getCurrentPositionAsync({});
-        setLocation(location);
-        
-        // Fetch prayer times with the location
-        const times = await fetchPrayerTimes(
-          location.coords.latitude,
-          location.coords.longitude,
-          prayerSettings.calculationMethod === 'muslimWorldLeague' ? 3 : 2
-        );
-        
-        // Get today's prayer times
-        const today = new Date();
-        const day = today.getDate();
-        
-        if (times && times[day - 1] && times[day - 1].timings) {
-          const todayTimes = times[day - 1].timings;
-          
-          // Clean up the time strings (remove the timezone part)
-          Object.keys(todayTimes).forEach(key => {
-            todayTimes[key] = todayTimes[key].split(' ')[0];
-          });
-          
-          setPrayerTimes(todayTimes);
-          calculateNextPrayer(todayTimes);
-        }
-      } catch (error) {
-        console.error('Error fetching prayer times:', error);
-        setErrorMsg('Could not fetch prayer times. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-    
-    // Update time remaining every minute
-    const timer = setInterval(() => {
-      setCurrentDate(new Date());
-      if (prayerTimes && nextPrayer) {
-        updateTimeRemaining();
-      }
-    }, 60000); // Update every minute
-    
-    return () => clearInterval(timer);
+    loadPrayerTimes();
   }, [prayerSettings.calculationMethod]);
   
-  const onRefresh = async () => {
-    setRefreshing(true);
+  const loadPrayerTimes = async () => {
     try {
-      if (location) {
-        const times = await fetchPrayerTimes(
-          location.coords.latitude,
-          location.coords.longitude,
-          prayerSettings.calculationMethod === 'muslimWorldLeague' ? 3 : 2
-        );
-        
-        const today = new Date();
-        const day = today.getDate();
-        
-        if (times && times[day - 1] && times[day - 1].timings) {
-          const todayTimes = times[day - 1].timings;
-          
-          // Clean up the time strings
-          Object.keys(todayTimes).forEach(key => {
-            todayTimes[key] = todayTimes[key].split(' ')[0];
-          });
-          
-          setPrayerTimes(todayTimes);
-          calculateNextPrayer(todayTimes);
-        }
+      setLoading(true);
+      setError(null);
+      
+      // Get location permission
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Location permission is needed to calculate prayer times');
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error refreshing prayer times:', error);
+      
+      // Get current location
+      const location = await Location.getCurrentPositionAsync({});
+      setLocation(location);
+      
+      // Get prayer times for the month
+      const times = await fetchPrayerTimes(
+        location.coords.latitude,
+        location.coords.longitude,
+        prayerSettings.calculationMethod
+      );
+      
+      setPrayerTimes(times);
+      calculateNextPrayer(times);
+    } catch (err) {
+      console.error('Failed to load prayer times:', err);
+      setError('Failed to load prayer times. Please check your connection and try again.');
     } finally {
-      setRefreshing(false);
+      setLoading(false);
     }
   };
   
   const calculateNextPrayer = (times) => {
     const now = new Date();
-    const prayers = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-    let nextPrayerName = null;
-    let nextPrayerTime = null;
+    const today = now.getDate() - 1; // API uses 1-indexed days, JS uses 0-indexed
     
-    for (const prayer of prayers) {
-      if (!times[prayer]) continue;
-      
-      const [hours, minutes] = times[prayer].split(':').map(Number);
-      const prayerTime = new Date(now);
-      prayerTime.setHours(hours, minutes, 0, 0);
-      
-      if (prayerTime > now) {
-        nextPrayerName = prayer;
-        nextPrayerTime = prayerTime;
-        break;
+    if (!times || !times[today]) return;
+    
+    const todayTimes = times[today].timings;
+    const prayers = [
+      { name: 'Fajr', time: new Date(`${times[today].date.readable} ${todayTimes.Fajr}`) },
+      { name: 'Sunrise', time: new Date(`${times[today].date.readable} ${todayTimes.Sunrise}`) },
+      { name: 'Dhuhr', time: new Date(`${times[today].date.readable} ${todayTimes.Dhuhr}`) },
+      { name: 'Asr', time: new Date(`${times[today].date.readable} ${todayTimes.Asr}`) },
+      { name: 'Maghrib', time: new Date(`${times[today].date.readable} ${todayTimes.Maghrib}`) },
+      { name: 'Isha', time: new Date(`${times[today].date.readable} ${todayTimes.Isha}`) }
+    ];
+    
+    // Find the next prayer
+    const upcomingPrayers = prayers.filter(prayer => prayer.time > now);
+    
+    if (upcomingPrayers.length > 0) {
+      setNextPrayer(upcomingPrayers[0]);
+    } else {
+      // All prayers for today are done, next is tomorrow's Fajr
+      const tomorrowTimes = times[today + 1]?.timings;
+      if (tomorrowTimes) {
+        setNextPrayer({
+          name: 'Fajr',
+          time: new Date(`${times[today + 1].date.readable} ${tomorrowTimes.Fajr}`)
+        });
       }
     }
-    
-    // If no next prayer found for today, next prayer is Fajr tomorrow
-    if (!nextPrayerName) {
-      nextPrayerName = 'Fajr';
-      const [hours, minutes] = times['Fajr'].split(':').map(Number);
-      nextPrayerTime = new Date(now);
-      nextPrayerTime.setDate(nextPrayerTime.getDate() + 1);
-      nextPrayerTime.setHours(hours, minutes, 0, 0);
-    }
-    
-    setNextPrayer({ name: nextPrayerName, time: nextPrayerTime });
-    updateTimeRemaining(nextPrayerTime);
-  };
-  
-  const updateTimeRemaining = (prayerTime = nextPrayer?.time) => {
-    if (!prayerTime) return;
-    
-    const now = new Date();
-    const diff = prayerTime - now;
-    
-    if (diff <= 0) {
-      setTimeRemaining('Now');
-      return;
-    }
-    
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    setTimeRemaining(`${hours}h ${minutes}m`);
   };
   
   const formatTime = (timeString) => {
     if (!timeString) return '';
     
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours, 10);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const hour12 = hour % 12 || 12;
+    // Extract hours and minutes from the time string (e.g. "04:30 (EET)")
+    const timeParts = timeString.split(' ')[0].split(':');
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = timeParts[1];
     
-    return `${hour12}:${minutes} ${ampm}`;
+    // Convert to 12-hour format
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const hours12 = hours % 12 || 12;
+    
+    return `${hours12}:${minutes} ${period}`;
   };
   
-  const getHijriDate = () => {
-    // This is a simplified version - in a real app, you might want to use a library
-    // or an API to get the accurate Hijri date
-    return "14 Ramadan 1446";
+  const getTimeRemaining = (targetTime) => {
+    if (!targetTime) return '';
+    
+    const now = new Date();
+    const diff = targetTime - now;
+    
+    if (diff <= 0) return 'Now';
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+  
+  const handleCalculationMethodChange = () => {
+    Alert.alert(
+      'Calculation Method',
+      'Choose the method to calculate prayer times',
+      [
+        { text: 'Muslim World League', onPress: () => updateMethod(1) },
+        { text: 'Islamic Society of North America (ISNA)', onPress: () => updateMethod(2) },
+        { text: 'Egyptian General Authority', onPress: () => updateMethod(3) },
+        { text: 'Umm al-Qura University, Makkah', onPress: () => updateMethod(4) },
+        { text: 'University of Islamic Sciences, Karachi', onPress: () => updateMethod(5) },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
+  
+  const updateMethod = (methodId) => {
+    dispatch(updatePrayerSettings({ calculationMethod: methodId }));
   };
   
   const navigateToQibla = () => {
     navigation.navigate('QiblaFinder');
   };
   
-  const openCalculationMethodSettings = () => {
-    // For simplicity, we'll just toggle between two methods
-    const newMethod = prayerSettings.calculationMethod === 'muslimWorldLeague' 
-      ? 'hanafi' 
-      : 'muslimWorldLeague';
-      
-    dispatch(updatePrayerSettings({ calculationMethod: newMethod }));
-  };
-
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }, styles.centered]}>
+      <View style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.text }]}>
-          Fetching prayer times...
+          Loading prayer times...
         </Text>
       </View>
     );
   }
-
-  if (errorMsg) {
+  
+  if (error) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }, styles.centered]}>
-        <Ionicons name="alert-circle-outline" size={64} color={colors.error} />
-        <Text style={[styles.errorText, { color: colors.error }]}>{errorMsg}</Text>
+      <View style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
+        <Ionicons name="alert-circle-outline" size={50} color={colors.error} />
+        <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
         <TouchableOpacity 
           style={[styles.retryButton, { backgroundColor: colors.primary }]}
-          onPress={onRefresh}
+          onPress={loadPrayerTimes}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
   }
-
+  
+  // Get today's prayer times
+  const today = new Date().getDate() - 1;
+  const todayTimes = prayerTimes[today]?.timings || {};
+  
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: colors.background }]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[colors.primary]}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      {/* Header with date and settings */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.dateText, { color: colors.text }]}>
-            {currentDate.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-          <Text style={[styles.hijriDate, { color: colors.muted }]}>
-            {getHijriDate()}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={openCalculationMethodSettings}>
-          <Ionicons name="settings-outline" size={24} color={colors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Next prayer card */}
-      {nextPrayer && prayerTimes && (
-        <LinearGradient
-          colors={
-            isDark 
-              ? [colors.card, colors.primary + '80'] 
-              : [colors.primary + '20', colors.primary + '50']
-          }
-          style={styles.nextPrayerCard}
-        >
-          <View style={styles.nextPrayerContent}>
-            <Text style={[styles.nextPrayerLabel, { color: colors.text }]}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Next Prayer Card */}
+      {nextPrayer && (
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.nextPrayerHeader}>
+            <Text style={[styles.nextPrayerTitle, { color: colors.text }]}>
               Next Prayer
             </Text>
+            <Text style={[styles.timeRemaining, { color: colors.primary }]}>
+              {getTimeRemaining(nextPrayer.time)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerHighlight}>
             <Text style={[styles.nextPrayerName, { color: colors.text }]}>
               {nextPrayer.name}
             </Text>
             <Text style={[styles.nextPrayerTime, { color: colors.primary }]}>
-              {formatTime(prayerTimes[nextPrayer.name])}
+              {formatTime(nextPrayer.time.toTimeString())}
             </Text>
-            <View style={styles.timeRemainingContainer}>
-              <Ionicons name="time-outline" size={18} color={colors.muted} />
-              <Text style={[styles.timeRemaining, { color: colors.muted }]}>
-                {timeRemaining}
-              </Text>
-            </View>
           </View>
-          <TouchableOpacity 
-            style={[styles.qiblaButton, { backgroundColor: colors.primary }]}
-            onPress={navigateToQibla}
-          >
-            <Ionicons name="navigate" size={24} color="#fff" />
-            <Text style={styles.qiblaButtonText}>Qibla</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        </View>
       )}
-
-      {/* Prayer times list */}
-      <View style={styles.prayerTimesContainer}>
-        {prayerTimes && Object.entries(prayerTimes).map(([prayer, time]) => {
-          // Skip prayers we don't want to show
-          if (
-            (prayer === 'Imsak' || prayer === 'Sunset' || prayer === 'Firstthird' || 
-             prayer === 'Lastthird' || prayer === 'Midnight' && !prayerSettings.showMidnight) ||
-            (prayer === 'Sunrise' && !prayerSettings.showSunrise)
-          ) {
-            return null;
-          }
-
-          const prayerData = prayerInfo[prayer] || { 
-            name: prayer, 
-            icon: 'time-outline',
-            color: colors.primary 
-          };
-
-          const isNext = nextPrayer && nextPrayer.name === prayer;
-
-          return (
-            <View 
-              key={prayer}
-              style={[
-                styles.prayerTimeItem, 
-                { backgroundColor: colors.card },
-                isNext && styles.nextPrayerItem
-              ]}
-            >
-              <View style={[styles.prayerIconContainer, { backgroundColor: prayerData.color + '30' }]}>
-                <Ionicons name={prayerData.icon} size={24} color={prayerData.color} />
-              </View>
-              <View style={styles.prayerNameContainer}>
-                <Text style={[styles.prayerName, { color: colors.text }]}>
-                  {prayerData.name}
-                </Text>
-              </View>
-              <Text style={[styles.prayerTime, { color: isNext ? colors.primary : colors.text }]}>
-                {formatTime(time)}
-              </Text>
+      
+      {/* All Prayers Card */}
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
+        <View style={styles.cardHeader}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>
+            Today's Prayer Times
+          </Text>
+          <Text style={[styles.date, { color: colors.muted }]}>
+            {prayerTimes[today]?.date?.readable}
+          </Text>
+        </View>
+        
+        <View style={styles.prayerList}>
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="sunny-outline" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Fajr</Text>
             </View>
-          );
-        })}
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Fajr)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="sunny" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Sunrise</Text>
+            </View>
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Sunrise)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="sunny" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Dhuhr</Text>
+            </View>
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Dhuhr)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="partly-sunny" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Asr</Text>
+            </View>
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Asr)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="moon-outline" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Maghrib</Text>
+            </View>
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Maghrib)}
+            </Text>
+          </View>
+          
+          <View style={styles.prayerItem}>
+            <View style={styles.prayerNameContainer}>
+              <Ionicons name="moon" size={22} color={colors.primary} />
+              <Text style={[styles.prayerName, { color: colors.text }]}>Isha</Text>
+            </View>
+            <Text style={[styles.prayerTime, { color: colors.primary }]}>
+              {formatTime(todayTimes.Isha)}
+            </Text>
+          </View>
+        </View>
       </View>
-
-      {/* Calculation method info */}
-      <View style={[styles.calculationInfo, { backgroundColor: colors.card }]}>
-        <Text style={[styles.calculationMethod, { color: colors.text }]}>
-          Calculation Method: {prayerSettings.calculationMethod === 'muslimWorldLeague' 
-            ? 'Muslim World League' 
-            : 'Hanafi'}
-        </Text>
-        <Text style={[styles.locationText, { color: colors.muted }]}>
-          {location ? 
-            `Location: ${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}` : 
-            'Location: Unknown'}
-        </Text>
+      
+      {/* Qibla Direction Card */}
+      <TouchableOpacity 
+        style={[styles.card, { backgroundColor: colors.card }]}
+        onPress={navigateToQibla}
+      >
+        <View style={styles.qiblaCard}>
+          <Ionicons name="compass-outline" size={30} color={colors.primary} />
+          <Text style={[styles.qiblaText, { color: colors.text }]}>Find Qibla Direction</Text>
+          <Ionicons name="chevron-forward" size={24} color={colors.muted} />
+        </View>
+      </TouchableOpacity>
+      
+      {/* Settings Card */}
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
+        <View style={styles.cardHeader}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Settings</Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.settingItem}
+          onPress={handleCalculationMethodChange}
+        >
+          <View style={styles.settingText}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Calculation Method</Text>
+            <Text style={[styles.settingValue, { color: colors.muted }]}>
+              {prayerSettings.calculationMethod === 1 ? 'Muslim World League' :
+               prayerSettings.calculationMethod === 2 ? 'ISNA' :
+               prayerSettings.calculationMethod === 3 ? 'Egyptian' :
+               prayerSettings.calculationMethod === 4 ? 'Umm al-Qura' :
+               prayerSettings.calculationMethod === 5 ? 'Karachi' : 'Standard'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </TouchableOpacity>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingText}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Show Notifications</Text>
+          </View>
+          <Switch
+            value={useSelector(state => state.settings.notifications.prayerReminders)}
+            onValueChange={(value) => 
+              dispatch(updateNotificationSettings({ prayerReminders: value }))
+            }
+            trackColor={{ false: colors.muted, true: colors.primary }}
+            thumbColor="#fff"
+          />
+        </View>
       </View>
     </ScrollView>
   );
@@ -368,9 +343,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centered: {
+  centeredContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
     marginTop: 15,
@@ -381,124 +358,119 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginHorizontal: 30,
+    marginBottom: 20,
   },
   retryButton: {
-    marginTop: 20,
-    paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 5,
   },
   retryButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  dateText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  hijriDate: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  nextPrayerCard: {
+  card: {
     margin: 15,
-    padding: 20,
-    borderRadius: 12,
+    borderRadius: 10,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  nextPrayerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 15,
   },
-  nextPrayerContent: {
-    flex: 1,
+  nextPrayerTitle: {
+    fontSize: 16,
+    fontWeight: '500',
   },
-  nextPrayerLabel: {
+  timeRemaining: {
     fontSize: 14,
-    marginBottom: 5,
+    fontWeight: 'bold',
+  },
+  prayerHighlight: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
   },
   nextPrayerName: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 5,
   },
   nextPrayerTime: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
-  timeRemainingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardHeader: {
+    marginBottom: 15,
   },
-  timeRemaining: {
-    fontSize: 14,
-    marginLeft: 5,
-  },
-  qiblaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-  },
-  qiblaButtonText: {
-    color: '#fff',
+  cardTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    marginLeft: 5,
   },
-  prayerTimesContainer: {
-    paddingHorizontal: 15,
+  date: {
+    fontSize: 14,
+    marginTop: 5,
   },
-  prayerTimeItem: {
+  prayerList: {
+    marginTop: 5,
+  },
+  prayerItem: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  nextPrayerItem: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#4CD964',
-  },
-  prayerIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E0E0E0',
   },
   prayerNameContainer: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   prayerName: {
     fontSize: 16,
-    fontWeight: '500',
+    marginLeft: 10,
   },
   prayerTime: {
     fontSize: 16,
-    fontWeight: '600',
-  },
-  calculationInfo: {
-    margin: 15,
-    padding: 15,
-    borderRadius: 8,
-  },
-  calculationMethod: {
-    fontSize: 14,
     fontWeight: '500',
-    marginBottom: 5,
   },
-  locationText: {
-    fontSize: 12,
-  }
+  qiblaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  qiblaText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 15,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E0E0E0',
+  },
+  settingText: {
+    flex: 1,
+  },
+  settingLabel: {
+    fontSize: 16,
+  },
+  settingValue: {
+    fontSize: 14,
+    marginTop: 2,
+  },
 });
 
 export default PrayerTimesScreen;
