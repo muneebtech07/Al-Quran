@@ -1,0 +1,15 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    - cron: "0 10 * * 1"   # Monday at 10:00 UTC
+    - cron: "0 10 * * 4"   # Thursday at 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase storage file
+        run: |
+          curl -I https://gdvhrnkvqmlbbtoulubc.supabase.co/storage/v1/object/public/quran/100.png
